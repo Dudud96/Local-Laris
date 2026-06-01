@@ -1,0 +1,6 @@
+{
+  "name": "Local Laris",
+  "description": "Beli Lokal, Dukung UMKM Brebes - Aplikasi Marketplace Khusus UMKM Kabupaten Brebes",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

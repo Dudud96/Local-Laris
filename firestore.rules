@@ -1,0 +1,88 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helpers
+    function isSignedIn() { return request.auth != null; }
+    function isAdmin() { return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)); }
+    function isOwner(uid) { return isSignedIn() && request.auth.uid == uid; }
+    function existing() { return resource.data; }
+    function incoming() { return request.resource.data; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+
+    match /admins/{uid} {
+      allow read: if isSignedIn();
+    }
+
+    // users
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin() || (resource != null && resource.data.role == 'seller');
+      allow create: if isOwner(userId) && incoming().keys().hasAll(['email', 'name', 'role', 'createdAt', 'updatedAt']) 
+        && incoming().role in ['buyer', 'seller']
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'photoURL', 'updatedAt'])
+        && incoming().updatedAt == request.time;
+        
+      match /addresses/{addressId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    // stores
+    match /stores/{storeId} {
+      allow read: if true; // Public list
+      allow create: if isSignedIn() 
+        && incoming().keys().hasAll(['ownerId', 'storeName', 'description', 'status', 'isVerified', 'createdAt', 'updatedAt'])
+        && incoming().ownerId == request.auth.uid
+        && incoming().status == 'pending'
+        && incoming().isVerified == false
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if (isSignedIn() && existing().ownerId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['storeName', 'description', 'logoUrl', 'bannerUrl', 'bankName', 'bankAccountNumber', 'updatedAt']) && incoming().updatedAt == request.time)
+        || isAdmin();
+    }
+
+    // products
+    match /products/{productId} {
+      allow read: if true;
+      allow create: if isSignedIn() 
+        && incoming().keys().hasAll(['storeId', 'ownerId', 'name', 'price', 'stock', 'status', 'createdAt', 'updatedAt'])
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if (isSignedIn() && existing().ownerId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'description', 'price', 'stock', 'image', 'images', 'status', 'category', 'updatedAt']) && incoming().updatedAt == request.time)
+        || isAdmin();
+      allow delete: if (isSignedIn() && existing().ownerId == request.auth.uid) || isAdmin();
+    }
+
+    // categories
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // banners
+    match /banners/{bannerId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // orders
+    match /orders/{orderId} {
+      allow read: if isSignedIn() && (existing().buyerId == request.auth.uid || existing().sellerId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() 
+        && incoming().buyerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if (isSignedIn() && existing().buyerId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['paymentProofUrl', 'status', 'updatedAt']))
+        || (isSignedIn() && existing().sellerId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['shippingResi', 'status', 'updatedAt']))
+        || isAdmin();
+    }
+  }
+}
